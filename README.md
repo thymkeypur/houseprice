@@ -1,5 +1,5 @@
 # houseprice
-Kaggle House Pricing Prediction
+This repository was made for the Kaggle House Pricing Prediction problem.
 
 Install following libraries(if you are missing them):<br>
 -pandas<br>
