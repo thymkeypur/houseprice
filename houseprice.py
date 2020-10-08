@@ -1,21 +1,42 @@
+"""
+Created on Wed 7 Oct 2020 
+
+Script was created to determine house price using Kaggle dataset
+
+Script Workflow:
+    (1) QUICK ANALYSIS OF THE COLUMNS
+    (2) FOCUS ON COLUMNS WITH SIGNIFICANT CORRELATION WITH SALEPRICE
+    (3) DATA ENGINEERING
+    (4) CLEANER & MORE FOCUSED ANALYSIS
+    (5) TRAIN & TEST ML MODELS
+"""
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from numpy import median
 
-# CHANGE FILE PATH
-filepath = r'C:\Users\user\Desktop\train.csv'
+'''*************************************************************************'''
+'''CHANGE FILE PATH, filepath = dir. in which train.csv is located'''
+filepath = r'C:\Users\user\Desktop\houseprice\train.csv'
+'''*************************************************************************'''
 
+'''Read file'''
 house = pd.read_csv(filepath)
 
-house.info()
 
+'''(1) QUICK ANALYSIS OF THE COLUMNS'''
+house.info()
+'''Print all possible unique values & counts for each column - can be used for studying individual columns'''
 for col in house.columns:
     print(house[col].value_counts())
     print('\n')
 
-# Getting a list of columns with corr >= 0.4 against SalePrice  
+
+'''(2) FOCUS ON COLUMNS WITH SIGNIFICANT CORRELATION WITH SALEPRICE'''
+'''Getting corr_col: a list of columns(with corr >= 0.4 against SalePrice'''
+    # corr_list: provides the column name and its correlation value with SalePrice
 corr = house.corr()['SalePrice'].apply(lambda x:abs(x))
 corr_list = []
 corr_col = []
@@ -24,26 +45,28 @@ for c in corr:
     count = count + 1
     if c >= 0.4:
         corr_list.append(corr[[count-1]])
-        corr_col.append(corr.index[count-1])   
-corr_col
-corr_list
+        corr_col.append(corr.index[count-1])           
+print(corr_list)
 
-# Quick plot to have a rough idea of the columns with corr >= 0.4 against SalePrice
+'''Produce histograms to quickly analyse the columns(with corr >= 0.4 against SalePrice)'''
 for c in corr_col[:-1]:
     plt.title('Histogram for {}'.format(c))
     plt.hist(house[c])
     plt.show()
-    
-# Important variables for determining price: Year built, Year remodelled, Area/size & Overall quality
+
+'''Print median values for the unique values in each column in corr_col'''    
+# Important variables(according to corr_col) for determining price are related to: Year built, Year remodelled, Area/size variables & Overall quality
 for c in corr_col[:-1]:
     print('Median pricing by: {}\n'.format(c))
     print(house.groupby(c)['SalePrice'].median())
     print('\n')
-    
+
+
+'''(3) DATA ENGINEERING'''
 # Create a column total_built-in = TotalBsmtSF + 1stFlrSF + 2ndFlrSF
 # Take 1stFlrSF as the Land Size
 house.loc[:,'BuiltIn'] = house.loc[:,'TotalBsmtSF'] + house.loc[:,'1stFlrSF'] + house.loc[:,'2ndFlrSF']
-# Price per sf (land)
+# Price per sf (Land)
 house['PriceSF(Land)'] = (house['SalePrice'] / house['1stFlrSF']).round(2)
 # Price per sf (BuiltIn)
 house['PriceSF(BuiltIn)'] = (house['SalePrice'] / house['BuiltIn']).round(2)
@@ -53,7 +76,7 @@ house = house.rename(columns={'1stFlrSF':'Land'})
 # house1 focuses on columns with corr >= 0.4 against SalePrice
 house1 = house[['OverallQual','YearBuilt','YearRemodAdd','MasVnrArea','GrLivArea','FullBath','TotRmsAbvGrd','Fireplaces','GarageYrBlt','GarageArea','Land','BuiltIn','PriceSF(Land)', 'PriceSF(BuiltIn)', 'SalePrice']]
 
-# Get rid of outliers
+'''Get rid of outliers'''
 for col in house1.columns:
     sns.boxplot(x=col, data=house1)
     plt.show()
@@ -61,13 +84,8 @@ for col in house1.columns:
 Q1 = house1.quantile(0.25)
 Q3 = house1.quantile(0.75)
 IQR = Q3 - Q1
-print(IQR)
 upper = Q3 + 1.5*IQR
 lower = Q1 - 1.5*IQR
-print(upper)
-print(lower)
-
-house1.info()
 
 # scrolls thru each column and check if between their upper & lower limit, else drop entry
 def drop_outlier(df, col, upper, lower):
@@ -78,8 +96,8 @@ def drop_outlier(df, col, upper, lower):
 for col in house1.columns:
     house1 = drop_outlier(house1, col, upper[col], lower[col])
     
-# Create grouping for YearBuilt, YearRemodAdd, Land, BuiltIn for analysis purposes
-    # Group Year by 10s
+'''Create grouping for YearBuilt, YearRemodAdd, Land, BuiltIn for analysis purposes'''
+# Group Year by 10s
 year_col = ['YearBuilt','YearRemodAdd','GarageYrBlt']
 for col in year_col:
     house1[col+'_tens'] = house1[col].apply(lambda x:str(x)[:3]+'0s')
@@ -94,19 +112,48 @@ house1['BuiltIn_grp'] = house1['BuiltIn']/500
 house1['BuiltIn_grp'] = house1['BuiltIn_grp'].astype(int)
 house1['BuiltIn_grp'].value_counts()
 
-# Plots for analysis
+
+'''(4) CLEANER & MORE FOCUSED ANALYSIS'''
+'''Print plots for analysis'''
 plot_col = ['YearBuilt_tens','YearRemodAdd_tens','GarageYrBlt_tens','Land_grp','BuiltIn_grp']
 for col in plot_col:
     plt.figure(figsize=(15,8))
     plt.title('Sale Price based on {}'.format(col))
     sns.barplot(x=col, y='SalePrice', data=house1, estimator=median)
     plt.show()
-    
-plt.figure(figsize=(15,8))    
-sns.barplot(x='Land_grp', y='SalePrice', data=house1, hue='Fireplaces', estimator=median)
-plt.show()
-     
-# Train & test ML models
+
+def scanner(df, contains_str):
+    contains = []
+    for col in df.columns:
+        if contains_str.lower() in col.lower():
+            contains.append(col)
+    return contains
+
+to_drop = scanner(house1, 'Year') + scanner(house1, 'Area') + scanner(house1, 'Land') + scanner(house1, 'BuiltIn') + scanner(house1, 'GarageYr')
+hues = []
+hues = house1.columns.drop(to_drop).drop('SalePrice')
+
+'''Analyse how different hue affects the SalePrice based on Land Size'''
+for hue in hues:  
+    plt.figure(figsize=(15,8))    
+    sns.barplot(x='Land_grp', y='SalePrice', data=house1, hue=hue, estimator=median)
+    plt.title('Median Sale Price based on Land Size grouped by {}'.format(hue), size=15)
+    labels = ['<500sf', '500 to 900sf', '1000 to 1499sf', '1500 to 1999sf', '2000 to 2499sf']
+    plt.xticks([0,1,2,3,4],labels)
+    plt.legend(loc='upper left')
+    plt.show()
+
+'''Analyse how different hue affects the SalePrice based on BuiltIn Size'''    
+for hue in hues:  
+    plt.figure(figsize=(15,8))    
+    sns.barplot(x='BuiltIn_grp', y='SalePrice', data=house1, hue=hue, estimator=median)
+    plt.title('Median Sale Price based on Land Size grouped by {}'.format(hue), size=15)
+    labels = ['500 to 900sf', '1000 to 1499sf', '1500 to 1999sf', '2000 to 2499sf','2500 to 2999sf', '3000 to 3499sf','3500 to 3999sf', '4000 to 4499sf']
+    plt.xticks([0,1,2,3,4,5,6,7],labels) 
+    plt.legend(loc='upper left')
+    plt.show()
+
+'''(5) TRAIN & TEST ML MODELS'''
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
@@ -126,3 +173,5 @@ for name, model in models:
         if (seed == 100):
             print(name, '\t:', np.mean(mae))
 print('\nDone')
+
+    
